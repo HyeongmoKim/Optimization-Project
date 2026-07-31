@@ -36,6 +36,8 @@ namespace RedRunner
 		protected AudioSource m_MaceSlamAudioSource;
 		[SerializeField]
 		protected AudioSource m_UIAudioSource;
+		[SerializeField]
+		protected AudioClip m_SawHitSound;
 
 		[Header ("Music Clips")]
 		[Space]
@@ -62,6 +64,10 @@ namespace RedRunner
 		protected AudioClip m_MaceSlamSound;
 		[SerializeField]
 		protected AudioClip m_ButtonClickSound;
+		[SerializeField]
+		private AudioSource m_SawLoopAudioSource;
+		[SerializeField]
+		private AudioClip m_SawLoopSound;
 
 		#endregion
 
@@ -149,6 +155,10 @@ namespace RedRunner
 				}
 			}
 		}
+		public void PlaySawHitSound(Vector3 position)
+		{
+			PlaySoundOn(m_SoundAudioSource, m_SawHitSound);
+		}
 
 		public void PlayClickSound ()
 		{
@@ -161,6 +171,12 @@ namespace RedRunner
 				return clips [Random.Range (0, clips.Length)];
 			}
 			return null;
+		}
+		protected void StartSawLoop()
+		{
+			m_SawLoopAudioSource.clip = m_SawLoopSound;
+			m_SawLoopAudioSource.loop = true;
+			m_SawLoopAudioSource.Play();
 		}
 
 		#endregion
