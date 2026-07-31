@@ -47,3 +47,8 @@ sysinfo.txt
 *.unitypackage
 *.app
 *.ipa
+
+Logs/Packages-Update.log
+Optimization Project.slnx
+ProfilerCaptures/*.data
+ProfilerCaptures/*.highlights
