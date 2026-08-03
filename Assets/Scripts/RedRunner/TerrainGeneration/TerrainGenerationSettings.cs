@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
 
 namespace RedRunner.TerrainGeneration
 {
@@ -18,10 +19,16 @@ namespace RedRunner.TerrainGeneration
 		[SerializeField]
 		protected int m_EndBlocksCount = 1;
 		[SerializeField]
+		protected AssetLabelReference StartBlocksLabel;
+		[SerializeField]
+		protected AssetLabelReference MiddleBlocksLabel;
+		[SerializeField]
+		protected AssetLabelReference EndBlocksLabel;
+		[System.NonSerialized]
 		protected Block[] m_StartBlocks;
-		[SerializeField]
+		[System.NonSerialized]
 		protected Block[] m_MiddleBlocks;
-		[SerializeField]
+		[System.NonSerialized]
 		protected Block[] m_EndBlocks;
 		[SerializeField]
 		protected BackgroundLayer[] m_BackgroundLayers;
@@ -68,10 +75,32 @@ namespace RedRunner.TerrainGeneration
 			}
 		}
 
+		public AssetLabelReference StartBlocksLabelReference {
+			get {
+				return StartBlocksLabel;
+			}
+		}
+		public AssetLabelReference MiddleBlocksLabelReference {
+			get {
+				return MiddleBlocksLabel;
+			}
+		}
+		public AssetLabelReference EndBlocksLabelReference {
+			get {
+				return EndBlocksLabel;
+			}
+		}
+
 		public BackgroundLayer[] BackgroundLayers {
 			get {
 				return m_BackgroundLayers;
 			}
+		}
+		public void SetBlocks (Block[] startBlocks, Block[] middleBlocks, Block[] endBlocks)
+		{
+			m_StartBlocks = startBlocks;
+			m_MiddleBlocks = middleBlocks;
+			m_EndBlocks = endBlocks;
 		}
 
 	}

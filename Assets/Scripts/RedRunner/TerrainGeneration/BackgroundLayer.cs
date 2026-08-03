@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using UnityEngine.AddressableAssets;
 using UnityEngine;
 
 namespace RedRunner.TerrainGeneration
@@ -10,6 +11,8 @@ namespace RedRunner.TerrainGeneration
 	{
 		
 		public string name;
+		public AssetLabelReference BlocksLabel;
+		[System.NonSerialized]
 		public BackgroundBlock[] Blocks;
 		public BackgroundBlock LastBlock;
 		public float CurrentX;

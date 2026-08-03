@@ -1,0 +1,19 @@
+Library: C:\Users\KimHyeongMo\Documents\Optimization Project\Temp\BurstOutput\tempburstlibs\armeabi-v7a\lib_burst_generated
+--platform=Android
+--minimum-os-version=
+--backend=burst-llvm-19
+--target=ARMV7A_NEON32
+--global-safety-checks-setting=Off
+--meta-data-generation=False
+--dump=Function
+--float-precision=Standard
+--target-framework=NetFramework
+--generate-link-xml=Temp\burst.link.xml
+--temp-folder=C:\Users\KimHyeongMo\Documents\Optimization Project\Temp\Burst
+--debug=Full
+--key-folder=C:/Program Files/Unity/Hub/Editor/6000.3.14f1/Editor/Data/PlaybackEngines/AndroidPlayer
+--decode-folder=C:\Users\KimHyeongMo\Documents\Optimization Project\Library\Burst
+--output=C:\Users\KimHyeongMo\Documents\Optimization Project\Temp\BurstOutput\tempburstlibs\armeabi-v7a\lib_burst_generated
+--pdb-search-paths=Temp/ManagedSymbols/
+
+

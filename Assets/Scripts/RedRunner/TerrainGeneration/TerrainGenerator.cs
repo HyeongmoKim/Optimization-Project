@@ -1,7 +1,8 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using RedRunner.Characters;
 
 namespace RedRunner.TerrainGeneration
@@ -9,6 +10,7 @@ namespace RedRunner.TerrainGeneration
 
 	public abstract class TerrainGenerator : MonoBehaviour
 	{
+
 
 		private static TerrainGenerator m_Singleton;
 
@@ -43,6 +45,10 @@ namespace RedRunner.TerrainGeneration
 		protected BackgroundBlock m_LastBackgroundBlock;
 		protected float m_RemoveTime = 0f;
 		protected bool m_Reset = false;
+		private readonly List<AsyncOperationHandle<IList<GameObject>>> m_BackgroundLoadHandles = new List<AsyncOperationHandle<IList<GameObject>>> ();
+		private readonly List<AsyncOperationHandle<IList<GameObject>>> m_BlockLoadHandles = new List<AsyncOperationHandle<IList<GameObject>>> ();
+		private bool m_BackgroundReady;
+		private bool m_BlocksReady;
 
 		public float PreviousX
 		{
@@ -86,6 +92,153 @@ namespace RedRunner.TerrainGeneration
 			GameManager.OnReset += Reset;
 		}
 
+		protected virtual IEnumerator Start ()
+		{
+			yield return LoadBlocks();
+			if (!m_BlocksReady)
+			{
+				Debug.LogError("블록 로드 실패");
+				yield break;
+			}
+			yield return LoadBackgroundBlocks();
+		}
+
+		protected virtual IEnumerator LoadBlocks()
+		{
+			m_BlocksReady = false;
+			Block[] startBlocks = null;
+			Block[] middleBlocks = null;
+			Block[] endBlocks = null;
+
+			yield return LoadBlockSet(
+				m_Settings.StartBlocksLabelReference, "Start", blocks => startBlocks = blocks
+			);
+			yield return LoadBlockSet(
+				m_Settings.MiddleBlocksLabelReference, "Middle", blocks => middleBlocks = blocks
+			);
+			if(startBlocks == null || startBlocks.Length == 0 || middleBlocks == null || middleBlocks.Length == 0)
+			{
+				Debug.LogError("블록 로드 실패");
+				yield break;
+			}
+			m_Settings.SetBlocks(startBlocks, middleBlocks, endBlocks);
+			m_BlocksReady = true;
+			Debug.Log($"블록 로드 완료"+ $"Start: {startBlocks.Length}개, Middle: {middleBlocks.Length}개, End: {endBlocks.Length}개");
+		}
+
+		private IEnumerator LoadBlockSet(AssetLabelReference label, string setName, System.Action<Block[]> onLoaded)
+		{
+			if (label == null || !label.RuntimeKeyIsValid())
+			{
+				Debug.LogError($"{setName} Label이 설정되지 않았습니다.");
+				onLoaded?.Invoke(new Block[0]);
+				yield break;
+			}
+
+			AsyncOperationHandle<IList<GameObject>> handle = Addressables.LoadAssetsAsync<GameObject>(label, null);
+			m_BlockLoadHandles.Add(handle);
+			yield return handle;
+
+			if (handle.Status != AsyncOperationStatus.Succeeded)
+			{
+				Debug.LogError($"{setName} Block 로드 실패");
+				onLoaded?.Invoke(new Block[0]);
+				yield break;
+			}
+
+			List<Block> loadedBlocks = new List<Block>();
+			IList<GameObject> loadedObjects = handle.Result;
+
+			for (int i = 0; i < loadedObjects.Count; i++)
+			{
+				Block block = loadedObjects[i].GetComponent<Block>();
+				if (block == null)
+				{
+					Debug.LogError($"Block 컴포넌트가 없습니다: {loadedObjects[i].name}");
+					continue;
+				}
+				loadedBlocks.Add(block);
+			}
+
+			onLoaded?.Invoke(loadedBlocks.ToArray());
+			Debug.Log($"{setName} 블록 로드 완료: {loadedBlocks.Count}개");
+		}
+		private IEnumerator LoadBackgroundBlocks()
+		{
+			m_BackgroundReady = false;
+
+			for (int i = 0; i < m_BackgroundLayers.Length; i++)
+			{
+				AssetLabelReference label =
+					m_BackgroundLayers[i].BlocksLabel;
+
+				if (label == null || !label.RuntimeKeyIsValid())
+				{
+					Debug.LogError(
+						"Background Label이 설정되지 않았습니다: " +
+						m_BackgroundLayers[i].name);
+
+					m_BackgroundLayers[i].Blocks =
+						new BackgroundBlock[0];
+
+					continue;
+				}
+
+				AsyncOperationHandle<IList<GameObject>> handle =
+					Addressables.LoadAssetsAsync<GameObject>(
+						label,
+						null);
+
+				m_BackgroundLoadHandles.Add(handle);
+
+				yield return handle;
+
+				if (handle.Status != AsyncOperationStatus.Succeeded)
+				{
+					Debug.LogError(
+						"Background Block 로드 실패: " +
+						m_BackgroundLayers[i].name);
+
+					m_BackgroundLayers[i].Blocks =
+						new BackgroundBlock[0];
+
+					continue;
+				}
+
+				List<BackgroundBlock> loadedBlocks =
+					new List<BackgroundBlock>();
+
+				IList<GameObject> loadedObjects = handle.Result;
+
+				for (int j = 0; j < loadedObjects.Count; j++)
+				{
+					BackgroundBlock block =
+						loadedObjects[j]
+							.GetComponent<BackgroundBlock>();
+
+					if (block == null)
+					{
+						Debug.LogError(
+							"BackgroundBlock 컴포넌트가 없습니다: " +
+							loadedObjects[j].name);
+
+						continue;
+					}
+
+					loadedBlocks.Add(block);
+				}
+
+				m_BackgroundLayers[i].Blocks =
+					loadedBlocks.ToArray();
+
+				Debug.Log(
+					$"{m_BackgroundLayers[i].name} 배경 로드 완료: " +
+					$"{loadedBlocks.Count}개");
+			}
+
+			m_BackgroundReady = true;
+		}
+
 		protected virtual void Reset ()
 		{
 			m_Reset = true;
@@ -108,12 +261,34 @@ namespace RedRunner.TerrainGeneration
 
 		protected virtual void OnDestroy ()
 		{
-			m_Singleton = null;
+			GameManager.OnReset -= Reset;
+			for ( int i = 0; i < m_BackgroundLoadHandles.Count; i++ )
+			{
+				if( m_BackgroundLoadHandles [ i ].IsValid () )
+				{
+					Addressables.Release ( m_BackgroundLoadHandles [ i ] );
+				}
+			}
+			m_BackgroundLoadHandles.Clear ();
+			m_Settings.SetBlocks(new Block[0], new Block[0], new Block[0]);
+			for ( int i = 0; i < m_BlockLoadHandles.Count; i++ )
+			{
+				if( m_BlockLoadHandles [ i ].IsValid () )
+				{
+					Addressables.Release ( m_BlockLoadHandles [ i ] );
+				}
+			}
+			m_BlockLoadHandles.Clear ();
+			if( m_Singleton == this)
+			{
+				m_Singleton = null;
+			}
+			
 		}
 
 		protected virtual void Update ()
 		{
-			if ( m_Reset )
+			if ( m_Reset || !m_BlocksReady )
 			{
 				return;
 			}
@@ -182,6 +357,10 @@ namespace RedRunner.TerrainGeneration
 					CreateBlock ( block, current );
 				}
 			}
+			if (!m_BackgroundReady)
+				{
+					return;
+				}
 			for ( int i = 0; i < m_BackgroundLayers.Length; i++ )
 			{
 				int random = Random.Range ( 0, 2 );
@@ -333,7 +512,7 @@ namespace RedRunner.TerrainGeneration
 
 		public static Block ChooseFrom ( Block[] blocks )
 		{
-			if ( blocks.Length <= 0 )
+			if (blocks == null || blocks.Length <= 0)
 			{
 				return null;
 			}
