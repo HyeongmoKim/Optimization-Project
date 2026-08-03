@@ -451,7 +451,7 @@ Untracked Memory에는 Unity가 세부 카테고리로 분류하지 못한 플�
 - 동일 장면 상태에서 Snapshot을 다시 촬영
 - 반복 재시작 시 Managed/Native Memory의 지속적인 단조 증가 여부 확인
 
-Texture2D와 Graphics Memory의 실제 감소는 확인했지만 전체 메모리 절감 효과는 Resident Memory를 포함해 별도로 설명했습니다.
+재부팅 후 Texture 최적화 직후 218.4MB까지 증가했던 Untracked Memory가 170.3MB로 감소했고, 해당 libc_malloc 항목이 회수되는 것을 확인했다. 이를 통해 지속적인 누수보다 네이티브 allocator 또는 드라이버의 예약·캐시 메모리일 가능성이 높다고 판단했습니다.
 
 ## 실행 방법
 
