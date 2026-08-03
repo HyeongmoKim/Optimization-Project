@@ -8,12 +8,13 @@
 
 | 항목 | 개선 전 | 개선 후 | 변화 |
 | --- | ---: | ---: | ---: |
+| `SoundManager.GetHandle` (선택한 최악 프레임) | 29.33 ms / 11회 | Terrain 활성화 경로의 반복 호출 제거 | Audio 초기화 병목 제거 |
 | Texture2D Memory | 99.4 MB | 31.6 MB | **68.2% 감소** |
 | Graphics Memory | 160.9 MB | 92.9 MB | **42.3% 감소** |
 | Batches | 48 | 37 | **22.9% 감소** |
 | SetPass Calls | 30 | 19 | **36.7% 감소** |
 
-> 수치는 동일 프로젝트의 개선 전후 캡처를 기준으로 기록했습니다. Editor 수치와 Android 실기기 수치를 혼합해 평균값으로 사용하지 않았습니다.
+> 수치는 동일 프로젝트의 개선 전후 캡처를 기준으로 기록했습니다. Editor 수치와 Android 실기기 수치를 혼합해 평균값으로 사용하지 않았습니다. CPU의 29.33 ms는 평균값이 아니라 선택한 최악 프레임의 누적 시간이며, 동일 조건의 개선 후 수치를 다시 확보하기 전까지 감소율로 환산하지 않았습니다.
 
 ## 개발 및 측정 환경
 
@@ -41,6 +42,8 @@ TerrainGenerator.Update
 ```
 
 Saw 오브젝트마다 AudioSource와 재생 상태를 관리하던 구조를 정리하고, 공용 `AudioManager`에 효과음 재생을 위임했습니다. 오브젝트 활성화 시 반복되던 Audio 채널 초기화 작업을 줄였으며 변경 전후 Profiler 캡처를 함께 보관했습니다.
+
+선택한 최악 프레임에서는 `SoundManager.GetHandle`이 11회 호출되며 누적 29.33 ms를 사용했습니다. 개선 후 Terrain 활성화 호출 경로에서 해당 반복 초기화가 제거된 것을 확인했습니다. 단일 최악 프레임의 값이므로 평균 CPU Frame Time이나 전체 프레임 개선율로 표현하지 않았습니다.
 
 - 변경 코드: [`AudioManager.cs`](Assets/Scripts/RedRunner/AudioManager.cs), [`Saw.cs`](Assets/Scripts/RedRunner/Enemies/Saw.cs)
 - 측정 자료: [`ProfilerCaptures`](ProfilerCaptures/)
@@ -112,6 +115,306 @@ OnDestroy에서 AsyncOperationHandle Release
 - [`TerrainGenerationSettings.cs`](Assets/Scripts/RedRunner/TerrainGeneration/TerrainGenerationSettings.cs)
 - [`BackgroundLayer.cs`](Assets/Scripts/RedRunner/TerrainGeneration/BackgroundLayer.cs)
 
+## 핵심 코드 변경
+
+아래 코드는 원본 프로젝트와 현재 구현의 핵심 차이를 발췌한 것입니다. 각 항목을 펼치면 변경 전후 코드를 확인할 수 있습니다.
+
+<details>
+<summary><strong>1. Prefab 직접 참조를 Addressables Label 참조로 변경</strong></summary>
+
+### Before
+
+`TerrainGenerationSettings`가 모든 Block Prefab을 직접 참조했습니다. 이 참조가 Scene 및 설정 에셋의 Bundle 의존성으로 이어졌습니다.
+
+```csharp
+[SerializeField]
+protected Block[] m_StartBlocks;
+
+[SerializeField]
+protected Block[] m_MiddleBlocks;
+
+[SerializeField]
+protected Block[] m_EndBlocks;
+```
+
+### After
+
+직접 참조 대신 Label만 직렬화하고, 실제 Block 배열은 런타임에 구성하도록 분리했습니다.
+
+```csharp
+[SerializeField]
+protected AssetLabelReference StartBlocksLabel;
+
+[SerializeField]
+protected AssetLabelReference MiddleBlocksLabel;
+
+[System.NonSerialized]
+protected Block[] m_StartBlocks;
+
+[System.NonSerialized]
+protected Block[] m_MiddleBlocks;
+
+public void SetBlocks(Block[] startBlocks, Block[] middleBlocks)
+{
+    m_StartBlocks = startBlocks;
+    m_MiddleBlocks = middleBlocks;
+}
+```
+
+이 변경으로 설정 에셋은 Prefab의 실제 위치를 알 필요가 없고, Addressables Group과 Label이 리소스 구성을 담당합니다.
+
+</details>
+
+<details>
+<summary><strong>2. Label 기반 비동기 Block 로딩 추가</strong></summary>
+
+### Before
+
+기존 코드는 Inspector에 직렬화된 배열이 이미 채워져 있다는 전제에서 즉시 Terrain 생성을 시작했습니다.
+
+```csharp
+protected virtual void Update()
+{
+    if (m_Reset)
+    {
+        return;
+    }
+
+    Generate();
+}
+```
+
+### After
+
+게임 시작 시 Label별 Prefab을 비동기로 로드하고, 유효한 `Block` 컴포넌트만 런타임 배열에 저장합니다.
+
+```csharp
+protected virtual IEnumerator Start()
+{
+    yield return LoadBlocks();
+
+    if (!m_BlocksReady)
+    {
+        Debug.LogError("블록 로드 실패");
+        yield break;
+    }
+
+    yield return LoadBackgroundBlocks();
+}
+
+private IEnumerator LoadBlockSet(
+    AssetLabelReference label,
+    string setName,
+    System.Action<Block[]> onLoaded)
+{
+    if (label == null || !label.RuntimeKeyIsValid())
+    {
+        Debug.LogError($"{setName} Label이 설정되지 않았습니다.");
+        onLoaded?.Invoke(new Block[0]);
+        yield break;
+    }
+
+    AsyncOperationHandle<IList<GameObject>> handle =
+        Addressables.LoadAssetsAsync<GameObject>(label, null);
+
+    m_BlockLoadHandles.Add(handle);
+    yield return handle;
+
+    if (handle.Status != AsyncOperationStatus.Succeeded)
+    {
+        Debug.LogError($"{setName} Block 로드 실패");
+        onLoaded?.Invoke(new Block[0]);
+        yield break;
+    }
+
+    List<Block> loadedBlocks = new List<Block>();
+
+    IList<GameObject> loadedObjects = handle.Result;
+
+    for (int i = 0; i < loadedObjects.Count; i++)
+    {
+        Block block = loadedObjects[i].GetComponent<Block>();
+
+        if (block == null)
+        {
+            Debug.LogError(
+                $"Block 컴포넌트가 없습니다: {loadedObjects[i].name}");
+            continue;
+        }
+
+        loadedBlocks.Add(block);
+    }
+
+    onLoaded?.Invoke(loadedBlocks.ToArray());
+}
+```
+
+`m_BlocksReady`와 `m_BackgroundReady`를 사용해 비동기 로딩이 끝나기 전에 생성 로직이 배열에 접근하지 않도록 했습니다.
+
+</details>
+
+<details>
+<summary><strong>3. Background Prefab 배열을 Layer별 Label 로딩으로 변경</strong></summary>
+
+### Before
+
+각 Background Layer가 Prefab 배열을 직접 직렬화했습니다.
+
+```csharp
+[System.Serializable]
+public struct BackgroundLayer
+{
+    public string name;
+    public BackgroundBlock[] Blocks;
+}
+```
+
+### After
+
+Layer에는 Label을 저장하고, 로드된 배열은 직렬화하지 않는 런타임 데이터로 관리합니다.
+
+```csharp
+[System.Serializable]
+public struct BackgroundLayer
+{
+    public string name;
+    public AssetLabelReference BlocksLabel;
+
+    [System.NonSerialized]
+    public BackgroundBlock[] Blocks;
+}
+```
+
+```csharp
+AsyncOperationHandle<IList<GameObject>> handle =
+    Addressables.LoadAssetsAsync<GameObject>(
+        m_BackgroundLayers[i].BlocksLabel,
+        null);
+
+m_BackgroundLoadHandles.Add(handle);
+yield return handle;
+
+List<BackgroundBlock> loadedBlocks = new List<BackgroundBlock>();
+
+IList<GameObject> loadedObjects = handle.Result;
+
+for (int j = 0; j < loadedObjects.Count; j++)
+{
+    BackgroundBlock block =
+        loadedObjects[j].GetComponent<BackgroundBlock>();
+
+    if (block == null)
+    {
+        Debug.LogError(
+            $"BackgroundBlock 컴포넌트가 없습니다: {loadedObjects[j].name}");
+        continue;
+    }
+
+    loadedBlocks.Add(block);
+}
+
+m_BackgroundLayers[i].Blocks = loadedBlocks.ToArray();
+```
+
+Far, Middle, Near Layer가 각각 자신의 Label을 통해 필요한 Prefab 집합을 로드합니다.
+
+</details>
+
+<details>
+<summary><strong>4. Addressables Handle 생명주기 관리 추가</strong></summary>
+
+### Before
+
+기존 종료 처리에는 Addressables 리소스 해제 과정이 없었습니다.
+
+```csharp
+protected virtual void OnDestroy()
+{
+    m_Singleton = null;
+}
+```
+
+### After
+
+로드 시 저장한 Handle을 오브젝트 생명주기가 끝날 때 Release합니다.
+
+```csharp
+protected virtual void OnDestroy()
+{
+    GameManager.OnReset -= Reset;
+
+    for (int i = 0; i < m_BackgroundLoadHandles.Count; i++)
+    {
+        if (m_BackgroundLoadHandles[i].IsValid())
+        {
+            Addressables.Release(m_BackgroundLoadHandles[i]);
+        }
+    }
+
+    for (int i = 0; i < m_BlockLoadHandles.Count; i++)
+    {
+        if (m_BlockLoadHandles[i].IsValid())
+        {
+            Addressables.Release(m_BlockLoadHandles[i]);
+        }
+    }
+
+    m_BackgroundLoadHandles.Clear();
+    m_BlockLoadHandles.Clear();
+
+    if (m_Singleton == this)
+    {
+        m_Singleton = null;
+    }
+}
+```
+
+비동기 로드 성공 여부와 관계없이 유효한 Handle만 해제하고, 이벤트 구독도 함께 정리합니다.
+
+</details>
+
+<details>
+<summary><strong>5. Saw별 AudioSource 관리에서 공용 AudioManager 호출로 변경</strong></summary>
+
+### Before
+
+Saw가 AudioClip, AudioSource, 충돌 중 재생 상태를 각각 관리했습니다.
+
+```csharp
+[SerializeField]
+private AudioClip m_DefaultSound;
+
+[SerializeField]
+private AudioClip m_SawingSound;
+
+[SerializeField]
+private AudioSource m_AudioSource;
+```
+
+### After
+
+Saw의 Audio 필드를 제거하고 효과음 재생 책임을 공용 `AudioManager`로 이동했습니다.
+
+```csharp
+// AudioManager.cs
+[SerializeField]
+protected AudioClip m_SawHitSound;
+
+public void PlaySawHitSound(Vector3 position)
+{
+    PlaySoundOn(m_SoundAudioSource, m_SawHitSound);
+}
+```
+
+```csharp
+// Saw.cs
+AudioManager.Singleton.PlaySawHitSound(transform.position);
+```
+
+이를 통해 Saw Prefab마다 AudioSource와 Audio 채널을 초기화하던 구조를 공용 재생 경로로 통합했습니다.
+
+</details>
+
 ## Troubleshooting
 
 ### 1. 그룹을 분리했지만 Scene Bundle에 리소스가 남음
@@ -162,8 +465,6 @@ Texture2D와 Graphics Memory의 실제 감소는 확인했지만 전체 메모�
 
 - 이 저장소는 원작 전체를 새로 개발한 프로젝트가 아니라 기존 오픈소스 프로젝트를 분석하고 최적화한 사례입니다.
 - 최적화 수치는 기기, 해상도, 실행 구간 및 빌드 설정에 따라 달라질 수 있습니다.
-- Jenkins 운영 완료 사례가 아니라 Unity Batchmode에서 호출 가능한 빌드 진입점까지 구현한 상태입니다.
-- iOS 네이티브 브릿지 및 SDK 연동은 이 프로젝트의 범위에 포함하지 않았습니다.
 
 ## 원작 및 라이선스
 
