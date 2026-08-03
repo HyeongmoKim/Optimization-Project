@@ -46,8 +46,6 @@ Saw 오브젝트마다 AudioSource와 재생 상태를 관리하던 구조를 �
 선택한 최악 프레임에서는 `SoundManager.GetHandle`이 11회 호출되며 누적 29.33 ms를 사용했습니다. 개선 후 Terrain 활성화 호출 경로에서 해당 반복 초기화가 제거된 것을 확인했습니다. 단일 최악 프레임의 값이므로 평균 CPU Frame Time이나 전체 프레임 개선율로 표현하지 않았습니다.
 
 - 변경 코드: [`AudioManager.cs`](Assets/Scripts/RedRunner/AudioManager.cs), [`Saw.cs`](Assets/Scripts/RedRunner/Enemies/Saw.cs)
-- 측정 자료: [`ProfilerCaptures`](ProfilerCaptures/)
-- 관련 커밋: `5fb4c92` (`과도한 사운드 소스 제거 및 CPU 최적화 완료`)
 
 ### 2. Texture 및 Graphics Memory 절감
 
@@ -451,7 +449,7 @@ Untracked Memory에는 Unity가 세부 카테고리로 분류하지 못한 플�
 - 동일 장면 상태에서 Snapshot을 다시 촬영
 - 반복 재시작 시 Managed/Native Memory의 지속적인 단조 증가 여부 확인
 
-재부팅 후 Texture 최적화 직후 218.4MB까지 증가했던 Untracked Memory가 170.3MB로 감소했고, 해당 libc_malloc 항목이 회수되는 것을 확인했다. 이를 통해 지속적인 누수보다 네이티브 allocator 또는 드라이버의 예약·캐시 메모리일 가능성이 높다고 판단했습니다.
+재부팅 후 Texture 최적화 직후 218.4MB까지 증가했던 Untracked Memory가 170.3MB로 감소했고, 해당 libc_malloc 항목이 회수되는 것을 확인했습니다. 이를 통해 지속적인 누수보다 네이티브 allocator 또는 드라이버의 예약·캐시 메모리일 가능성이 높다고 판단했습니다.
 
 ## 실행 방법
 
