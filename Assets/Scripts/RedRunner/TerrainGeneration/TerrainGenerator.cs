@@ -108,7 +108,6 @@ namespace RedRunner.TerrainGeneration
 			m_BlocksReady = false;
 			Block[] startBlocks = null;
 			Block[] middleBlocks = null;
-			Block[] endBlocks = null;
 
 			yield return LoadBlockSet(
 				m_Settings.StartBlocksLabelReference, "Start", blocks => startBlocks = blocks
@@ -121,9 +120,9 @@ namespace RedRunner.TerrainGeneration
 				Debug.LogError("블록 로드 실패");
 				yield break;
 			}
-			m_Settings.SetBlocks(startBlocks, middleBlocks, endBlocks);
+			m_Settings.SetBlocks(startBlocks, middleBlocks);
 			m_BlocksReady = true;
-			Debug.Log($"블록 로드 완료"+ $"Start: {startBlocks.Length}개, Middle: {middleBlocks.Length}개, End: {endBlocks.Length}개");
+			Debug.Log($"블록 로드 완료"+ $"Start: {startBlocks.Length}개, Middle: {middleBlocks.Length}개");
 		}
 
 		private IEnumerator LoadBlockSet(AssetLabelReference label, string setName, System.Action<Block[]> onLoaded)
@@ -270,7 +269,7 @@ namespace RedRunner.TerrainGeneration
 				}
 			}
 			m_BackgroundLoadHandles.Clear ();
-			m_Settings.SetBlocks(new Block[0], new Block[0], new Block[0]);
+			m_Settings.SetBlocks(new Block[0], new Block[0]);
 			for ( int i = 0; i < m_BlockLoadHandles.Count; i++ )
 			{
 				if( m_BlockLoadHandles [ i ].IsValid () )

@@ -96,11 +96,10 @@ namespace RedRunner.TerrainGeneration
 				return m_BackgroundLayers;
 			}
 		}
-		public void SetBlocks (Block[] startBlocks, Block[] middleBlocks, Block[] endBlocks)
+		public void SetBlocks (Block[] startBlocks, Block[] middleBlocks)
 		{
 			m_StartBlocks = startBlocks;
 			m_MiddleBlocks = middleBlocks;
-			m_EndBlocks = endBlocks;
 		}
 
 	}
